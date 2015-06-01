@@ -1,0 +1,19 @@
+# Public Cloud login name
+os_username: username
+
+# Public Cloud login Password
+os_password: secrete
+
+# Public Cloud tenant ID. This is the number found in the top right corner
+# of the Rackspace Public Cloud control panel.
+os_tenant_name: username
+
+# You must create an SSH keypair and provide the name of it.
+os_keyname: keyname
+
+# Public Cloud region you would like to build your cluster in.
+# This is case sensitive and should be capitalized.
+os_region_name: IAD
+
+# Set the flavor size. OASD requires a minium of 8GB of ram.
+os_flavor_size: 8192

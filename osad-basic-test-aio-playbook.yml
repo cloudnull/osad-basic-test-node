@@ -1,0 +1,106 @@
+---
+
+- name: Create an OSAD multi region cloud in OS Clouds
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  user: root
+  tasks:
+    - name: launch an instance
+      nova_compute:
+        name: "{{ login_username }}-{{ region_name }}-{{ item }}"
+        state: present
+        login_username: "{{ login_username }}"
+        login_password: "{{ login_password }}"
+        login_tenant_name: "{{ login_tenant_name }}"
+        auth_url: "{{ auth_url }}"
+        region_name: "{{ region_name | capitalize }}"
+        image_name: Ubuntu 14.04 LTS (Trusty Tahr) (PVHVM)
+        flavor_ram: "{{ os_flavor_size | default(8192) }}"
+        flavor_include: Performance
+        key_name: "{{ os_keyname }}"
+      with_items:
+        - aio1-development
+      register: nova_hosts
+      tags:
+        - setup
+    - name: Load inventory
+      add_host:
+        hostname: "{{ item.info.name.split('-')[-1] }}"
+        ansible_ssh_host: "{{ item.info.accessIPv4 }}"
+        ansible_ssh_port: "22"
+        groups: os_nodes
+      with_items: nova_hosts.results
+      tags:
+        - setup
+    - name: Wait for ssh
+      wait_for:
+        port: 22
+        host: "{{ item.info.accessIPv4 }}"
+        search_regex: OpenSSH
+        delay: 10
+      with_items: nova_hosts.results
+      tags:
+        - setup
+  vars:
+    login_username: "{{ os_username }}"
+    login_password: "{{ os_password }}"
+    login_tenant_name: "{{ os_tenant_name }}"
+    region_name: "{{ os_region_name }}"
+    auth_url: "{{ os_auth_url | default('https://identity.api.rackspacecloud.com/v2.0/') }}"
+
+- name: Setup hosts
+  hosts: os_nodes
+  gather_facts: false
+  user: root
+  tasks:
+    - name: Install base packages
+      apt:
+        name: "{{ item }}"
+        update_cache: "yes"
+        cache_valid_time: "3600"
+      with_items:
+        - vim
+        - tmux
+        - git
+        - curl
+      tags:
+        - setup-hosts
+    - name: Clone OSAD into place
+      git:
+        repo: "{{ git_repo }}"
+        dest: /opt/os-ansible-deployment
+        update: yes
+        force: yes
+      failed_when: false
+      tags:
+        - setup-hosts
+    - name: Bootstrap ansible Ansible
+      command: scripts/bootstrap-ansible.sh
+      args:
+        chdir: /opt/os-ansible-deployment
+        creates: /usr/local/bin/openstack-ansible
+      tags:
+        - setup-hosts
+    - name: Bootstrap ansible AIO
+      command: scripts/bootstrap-aio.sh
+      args:
+        chdir: /opt/os-ansible-deployment
+        creates: /etc/openstack_deploy/openstack_user_config.yml
+      tags:
+        - setup-hosts
+    - name: Run the gate check commit script
+      command: ./scripts/gate-check-commit.sh
+      environment:
+        RUN_TEMPEST: no
+      args:
+        chdir: /opt/os-ansible-deployment
+      register: playbook_run
+      until: playbook_run|success
+      retries: 2
+      delay: 1
+      tags:
+        - setup-identity
+        - run-keystone
+  vars:
+    git_repo: "{{ osad_repo | default('https://github.com/stackforge/os-ansible-deployment') }}"
